@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1f26">
+<title>TIDE 2048</title>
+<style>
+  :root{
+    --bg:#0b1f26;
+    --bg2:#0f2a33;
+    --board:#16343d;
+    --cell:rgba(255,255,255,.045);
+    --ink:#eaf6f4;
+    --muted:#7fa3a8;
+    --accent:#3fe0c5;
+    --radius:14px;
+    --gap:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    background:radial-gradient(120% 120% at 50% 0%, var(--bg2), var(--bg) 60%);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    display:flex;flex-direction:column;align-items:center;
+    min-height:100dvh;
+    padding:max(env(safe-area-inset-top),16px) 16px max(env(safe-area-inset-bottom),16px);
+    overflow:hidden;
+    user-select:none;-webkit-user-select:none;
+    touch-action:none;
+  }
+  .wrap{width:100%;max-width:480px;margin:auto 0;}
+  header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;gap:12px;}
+  .brand{line-height:1;}
+  .brand h1{
+    font-size:40px;font-weight:800;letter-spacing:-2px;
+    font-variant-numeric:tabular-nums;
+    background:linear-gradient(180deg,#eaf6f4,#8fe9d8);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .brand p{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--muted);margin-top:6px;}
+  .scores{display:flex;gap:8px;}
+  .score{
+    background:var(--board);border-radius:12px;padding:8px 14px;min-width:76px;text-align:center;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .score .lab{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);}
+  .score .val{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:2px;}
+  .score .val .delta{
+    position:absolute;font-size:15px;color:var(--accent);font-weight:700;
+    animation:floatUp .6s ease-out forwards;pointer-events:none;
+  }
+  .scoreCell{position:relative;}
+  @keyframes floatUp{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-22px)}}
+
+  .bar{display:flex;gap:10px;margin-bottom:14px;}
+  button{
+    font-family:inherit;border:none;cursor:pointer;color:var(--ink);
+    background:var(--board);border-radius:12px;padding:11px 16px;font-size:14px;font-weight:600;
+    flex:1;transition:transform .08s ease, background .15s ease;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  button:active{transform:scale(.96);}
+  button.primary{background:linear-gradient(180deg,#3fe0c5,#1fb89e);color:#063038;}
+  button:disabled{opacity:.4;cursor:default;}
+
+  .boardWrap{position:relative;width:100%;aspect-ratio:1/1;}
+  .board{
+    position:absolute;inset:0;background:var(--board);border-radius:18px;
+    padding:var(--gap);
+    box-shadow:0 18px 40px -16px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .grid{position:absolute;inset:var(--gap);display:grid;
+    grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);gap:var(--gap);}
+  .grid .bgcell{background:var(--cell);border-radius:var(--radius);}
+  .tiles{position:absolute;inset:var(--gap);}
+  .tile{
+    position:absolute;display:flex;align-items:center;justify-content:center;
+    border-radius:var(--radius);font-weight:800;font-variant-numeric:tabular-nums;
+    letter-spacing:-1px;
+    transition:transform .13s cubic-bezier(.3,.8,.4,1);
+    will-change:transform;
+  }
+  .tile.new{animation:pop .18s ease-out;}
+  .tile.merged{animation:merge .18s ease;}
+  @keyframes pop{0%{transform:scale(0) translate(var(--tx),var(--ty))}100%{transform:scale(1) translate(var(--tx),var(--ty))}}
+  @keyframes merge{0%{}50%{transform:scale(1.16) translate(var(--tx),var(--ty))}100%{transform:scale(1) translate(var(--tx),var(--ty))}}
+
+  /* tile palette — tide / sea-glass */
+  .v2{background:#244852;color:#cfe9e6;}
+  .v4{background:#2d5a5e;color:#dff4ef;}
+  .v8{background:#f0a48a;color:#3a1d16;}
+  .v16{background:#ef8a6a;color:#3a1d16;}
+  .v32{background:#ef6f53;color:#fff;}
+  .v64{background:#f0524a;color:#fff;}
+  .v128{background:#f4b740;color:#3a2900;box-shadow:0 0 18px -2px rgba(244,183,64,.5);}
+  .v256{background:#f5c531;color:#3a2900;box-shadow:0 0 20px 0 rgba(245,197,49,.55);}
+  .v512{background:#ffd83d;color:#3a2900;box-shadow:0 0 24px 2px rgba(255,216,61,.6);}
+  .v1024{background:#34d3b6;color:#04302a;box-shadow:0 0 26px 2px rgba(52,211,182,.6);}
+  .v2048{background:linear-gradient(135deg,#3fe0c5,#34d3b6);color:#04302a;box-shadow:0 0 34px 4px rgba(63,224,197,.7);}
+  .vbig{background:linear-gradient(135deg,#7a5cff,#4f8bff);color:#fff;box-shadow:0 0 30px 2px rgba(122,92,255,.6);}
+
+  .overlay{
+    position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(11,31,38,.82);border-radius:18px;backdrop-filter:blur(3px);z-index:5;gap:14px;
+    animation:fade .3s ease;
+  }
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .overlay h2{font-size:34px;font-weight:800;letter-spacing:-1px;}
+  .overlay.win h2{color:var(--accent);}
+  .overlay .ov-actions{display:flex;gap:10px;width:80%;}
+  .hint{text-align:center;color:var(--muted);font-size:12.5px;margin-top:16px;line-height:1.5;}
+
+  /* help button */
+  button.help{flex:0 0 50px;min-width:50px;font-size:18px;font-weight:700;color:var(--muted);}
+
+  .stats{display:flex;justify-content:space-between;gap:10px;margin:-2px 2px 12px;
+    font-size:12.5px;color:var(--muted);letter-spacing:.3px;}
+  .stats b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;}
+  .ov-sub{color:#bcd6d6;font-size:14px;line-height:1.55;text-align:center;margin:-2px 0 2px;max-width:84%;}
+  .ov-sub .rec{color:var(--accent);font-weight:700;}
+
+  /* tutorial */
+  .tut{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    background:rgba(6,18,22,.86);backdrop-filter:blur(6px);padding:24px;animation:fade .25s ease;}
+  .tut.show{display:flex;}
+  .tutCard{width:100%;max-width:360px;background:linear-gradient(180deg,#16343d,#102a32);
+    border-radius:22px;padding:26px 22px 22px;position:relative;text-align:center;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);}
+  .tutSkip{position:absolute;top:12px;right:12px;background:none;box-shadow:none;color:var(--muted);
+    font-size:13px;padding:6px 8px;flex:none;width:auto;}
+  .tutVisual{height:140px;display:flex;align-items:center;justify-content:center;}
+  .tv{display:none;align-items:center;justify-content:center;}
+  .tv.on{display:flex;}
+
+  .tvArrows{display:grid;grid-template-columns:repeat(3,40px);grid-template-rows:repeat(3,40px);gap:5px;}
+  .tvArrows span{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--accent);
+    background:var(--cell);border-radius:10px;animation:pulse 1.6s ease-in-out infinite;}
+  .tvArrows .up{grid-area:1/2;} .tvArrows .left{grid-area:2/1;}
+  .tvArrows .mid{grid-area:2/2;background:#2d5a5e;color:#dff4ef;font-size:18px;font-weight:800;animation:none;}
+  .tvArrows .right{grid-area:2/3;} .tvArrows .down{grid-area:3/2;}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+  .tvMerge{position:relative;width:208px;height:46px;}
+  .tvMerge .mt{position:absolute;top:0;left:0;width:46px;height:46px;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;}
+  .mtA{background:#244852;color:#cfe9e6;animation:demoA 2.8s ease-in-out infinite;}
+  .mtB{background:#244852;color:#cfe9e6;animation:demoB 2.8s ease-in-out infinite;}
+  .mtR{background:#2d5a5e;color:#dff4ef;animation:demoR 2.8s ease-in-out infinite;opacity:0;}
+  @keyframes demoB{0%{transform:translateX(162px);opacity:1}38%{transform:translateX(0);opacity:1}42%,100%{transform:translateX(0);opacity:0}}
+  @keyframes demoA{0%,38%{opacity:1}42%,100%{opacity:0}}
+  @keyframes demoR{0%,38%{opacity:0;transform:scale(.2)}44%{opacity:1;transform:scale(1.15)}50%{transform:scale(1)}82%{opacity:1}90%,100%{opacity:0;transform:scale(1)}}
+
+  .tvGoal{width:96px;height:96px;border-radius:18px;display:flex;align-items:center;justify-content:center;
+    font-size:30px;font-weight:800;letter-spacing:-1px;
+    background:linear-gradient(135deg,#3fe0c5,#34d3b6);color:#04302a;
+    box-shadow:0 0 34px 4px rgba(63,224,197,.6);animation:goalPulse 2s ease-in-out infinite;}
+  @keyframes goalPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+
+  .tutTitle{font-size:22px;font-weight:800;margin:10px 0 8px;letter-spacing:-.5px;}
+  .tutBody{color:#bcd6d6;font-size:14.5px;line-height:1.6;min-height:70px;}
+  .tutDots{display:flex;gap:7px;justify-content:center;margin:12px 0 16px;}
+  .tutDots i{width:7px;height:7px;border-radius:50%;background:var(--cell);transition:.2s;}
+  .tutDots i.on{background:var(--accent);width:20px;border-radius:4px;}
+  .tutNext{width:100%;}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <h1>2048</h1>
+        <p>Tide&nbsp;Edition</p>
+      </div>
+      <div class="scores">
+        <div class="score scoreCell"><div class="lab">Score</div><div class="val" id="score">0</div></div>
+        <div class="score"><div class="lab">Best</div><div class="val" id="best">0</div></div>
+      </div>
+    </header>
+
+    <div class="bar">
+      <button id="help" class="help" aria-label="あそびかた">？</button>
+      <button id="undo" disabled>↶ ひとつ戻す</button>
+      <button id="new" class="primary">あたらしく</button>
+    </div>
+
+    <div class="stats">
+      <span>手数 <b id="moves">0</b></span>
+      <span>最少クリア <b id="bestMoves">—</b></span>
+    </div>
+
+    <div class="boardWrap">
+      <div class="board">
+        <div class="grid" id="grid"></div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+      <div class="overlay" id="overlay">
+        <h2 id="ovTitle">ゲームオーバー</h2>
+        <p class="ov-sub" id="ovSub"></p>
+        <div class="ov-actions">
+          <button id="ovKeep" style="display:none">続ける</button>
+          <button id="ovNew" class="primary">もう一回</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="hint">スワイプ（↑↓←→）でタイルを動かす。<br>同じ数字がぶつかると合体。<br>スマホは指で、PCは矢印キーでもOK。</p>
+
+    <div class="tut" id="tut">
+      <div class="tutCard">
+        <button class="tutSkip" id="tutSkip">スキップ</button>
+        <div class="tutVisual">
+          <div class="tv tv1">
+            <div class="tvArrows">
+              <span class="up">↑</span><span class="left">←</span>
+              <span class="mid">2</span>
+              <span class="right">→</span><span class="down">↓</span>
+            </div>
+          </div>
+          <div class="tv tv2">
+            <div class="tvMerge">
+              <div class="mt mtA">2</div>
+              <div class="mt mtB">2</div>
+              <div class="mt mtR">4</div>
+            </div>
+          </div>
+          <div class="tv tv3">
+            <div class="tvGoal">2048</div>
+          </div>
+        </div>
+        <h2 class="tutTitle" id="tutTitle"></h2>
+        <p class="tutBody" id="tutBody"></p>
+        <div class="tutDots" id="tutDots"></div>
+        <button class="primary tutNext" id="tutNext">つぎへ</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- safe storage (works locally; falls back to memory in sandbox) ----
+  var mem = {};
+  var store = {
+    get:function(k){ try{ var v=localStorage.getItem(k); return v==null?mem[k]:v; }catch(e){ return mem[k]; } },
+    set:function(k,v){ try{ localStorage.setItem(k,v); }catch(e){} mem[k]=v; }
+  };
+
+  var SIZE = 4;
+  var gridEl = document.getElementById('grid');
+  var tilesEl = document.getElementById('tiles');
+  var scoreEl = document.getElementById('score');
+  var bestEl = document.getElementById('best');
+  var overlay = document.getElementById('overlay');
+  var ovTitle = document.getElementById('ovTitle');
+  var ovKeep = document.getElementById('ovKeep');
+  var ovNew = document.getElementById('ovNew');
+  var undoBtn = document.getElementById('undo');
+  var newBtn = document.getElementById('new');
+  var movesEl = document.getElementById('moves');
+  var bestMovesEl = document.getElementById('bestMoves');
+  var ovSub = document.getElementById('ovSub');
+
+  // background cells
+  for(var i=0;i<SIZE*SIZE;i++){ var c=document.createElement('div'); c.className='bgcell'; gridEl.appendChild(c); }
+
+  var grid, score, best, uid, keepGoing, won, history;
+  var moves, bestMoves, startTime, finishTime, lastBonus, lastWinMoves, lastWinTime;
+
+  // ---- スコア設定（ここを差し替えれば挙動を調整できる / 拡張ポイント） ----
+  var SCORING = {
+    idealMoves: 1024,       // 2048到達の理論的な最小手数の目安
+    efficiencyPool: 20480,  // 効率ボーナスの基準値（クリーンな2048のマージ点と同じ）
+    // 手数ボーナス：少ない手数ほど高い。理想手数で打つと約 efficiencyPool、倍かかると約半分。
+    moveBonus: function(mv){
+      if(!mv || mv <= 0) return 0;
+      var b = Math.round(this.efficiencyPool * this.idealMoves / mv);
+      return Math.min(b, this.efficiencyPool); // 上限は基準値（少なすぎる手数でも青天井にしない）
+    },
+    // ▼タイムアタック用フック（後付け用。今は0を返すだけ。secondsを渡せばここで加点設計できる）
+    timeBonus: function(seconds){
+      if(seconds == null) return 0;
+      return 0; // TODO: タイムアタック実装時にここを設計
+    }
+  };
+
+  best = parseInt(store.get('tide2048_best')||'0',10)||0;
+  bestEl.textContent = best;
+  bestMoves = parseInt(store.get('tide2048_bestmoves')||'0',10)||0;
+
+  function emptyGrid(){ var g=[]; for(var r=0;r<SIZE;r++){g.push([null,null,null,null]);} return g; }
+
+  function init(){
+    grid = emptyGrid();
+    score = 0; uid = 1; keepGoing=false; won=false; history=null;
+    moves = 0; startTime = Date.now(); finishTime = null;
+    lastBonus = 0; lastWinMoves = 0; lastWinTime = 0;
+    addRandom(); addRandom();
+    render(true);
+    updateScore(0);
+    updateStats();
+    overlay.style.display='none';
+    undoBtn.disabled = true;
+  }
+
+  function cells(){ var out=[]; for(var r=0;r<SIZE;r++)for(var c=0;c<SIZE;c++){ if(!grid[r][c]) out.push({r:r,c:c}); } return out; }
+
+  function addRandom(){
+    var e = cells(); if(!e.length) return;
+    var spot = e[Math.floor(Math.random()*e.length)];
+    grid[spot.r][spot.c] = { id:uid++, val: Math.random()<0.9?2:4, r:spot.r, c:spot.c, isNew:true };
+  }
+
+  function classFor(v){
+    if(v>2048) return 'vbig';
+    return 'v'+v;
+  }
+  function fontSize(v){
+    var d=(''+v).length;
+    if(d<=2) return '0.46';
+    if(d===3) return '0.40';
+    if(d===4) return '0.32';
+    return '0.26';
+  }
+
+  // タイルDOMをIDで使い回す（全消し再生成をやめ、transformを更新してスライドさせる）
+  var els = {}, ghostIds = {};
+
+  function cellMetrics(){
+    var rect = tilesEl.getBoundingClientRect();
+    var gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap'));
+    var cell = (rect.width - gap*(SIZE-1))/SIZE;
+    return { gap:gap, cell:cell };
+  }
+  function styleTile(el, val, cell){
+    el.className = 'tile ' + classFor(val);
+    el.style.width = cell+'px'; el.style.height = cell+'px';
+    el.style.fontSize = (cell*parseFloat(fontSize(val)))+'px';
+    el.textContent = val;
+  }
+  function setPos(el, r, c, m){
+    var tx = c*(m.cell+m.gap), ty = r*(m.cell+m.gap);
+    el.style.setProperty('--tx', tx+'px');
+    el.style.setProperty('--ty', ty+'px');
+    el.style.transform = 'translate('+tx+'px,'+ty+'px)';
+  }
+
+  function render(reset){
+    var m = cellMetrics();
+    if(reset){ tilesEl.innerHTML=''; els={}; ghostIds={}; }
+
+    // grid上にもう存在せず、合体アニメ中でもない要素を撤去
+    var alive = {};
+    for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){ var t=grid[r][c]; if(t) alive[t.id]=1; }
+    for(var id in els){
+      if(!alive[id] && !ghostIds[id]){
+        var dead=els[id]; if(dead && dead.parentNode) dead.parentNode.removeChild(dead);
+        delete els[id];
+      }
+    }
+
+    // 生成 / 更新
+    for(var r=0;r<SIZE;r++) for(var c=0;c<SIZE;c++){
+      var t=grid[r][c]; if(!t) continue;
+      var el=els[t.id];
+      if(!el){
+        el=document.createElement('div');
+        styleTile(el, t.val, m.cell);
+        setPos(el, r, c, m);
+        els[t.id]=el; tilesEl.appendChild(el);
+        if(t.isNew){ el.classList.add('new'); t.isNew=false; }
+      } else {
+        if(el.textContent !== String(t.val)){ styleTile(el, t.val, m.cell); }
+        setPos(el, r, c, m); // ← transition で滑る
+        if(t.merged){
+          el.style.zIndex='2';
+          el.classList.remove('merged'); void el.offsetWidth; el.classList.add('merged');
+          t.merged=false;
+        } else {
+          el.style.zIndex='';
+        }
+      }
+    }
+  }
+
+  function snapshot(){
+    var g=[];
+    for(var r=0;r<SIZE;r++){ g.push([]); for(var c=0;c<SIZE;c++){ var t=grid[r][c]; g[r].push(t?{id:t.id,val:t.val,r:r,c:c}:null);} }
+    return {grid:g, score:score, moves:moves, won:won, keepGoing:keepGoing};
+  }
+
+  function move(dir){
+    // tutorial open → ignore input
+    var tutEl=document.getElementById('tut');
+    if(tutEl && tutEl.classList.contains('show')) return;
+    // dir: 0=up,1=right,2=down,3=left
+    var prev = snapshot();
+    var wasWon = won;
+    var moved=false, gained=0;
+    var mergedAway=[]; // 合体で消えるタイル {tile, r, c(=合体先)}
+
+    function getLine(idx){
+      var line=[];
+      for(var k=0;k<SIZE;k++){
+        var r,c;
+        if(dir===3){r=idx;c=k;} else if(dir===1){r=idx;c=SIZE-1-k;}
+        else if(dir===0){r=k;c=idx;} else {r=SIZE-1-k;c=idx;}
+        line.push({r:r,c:c});
+      }
+      return line;
+    }
+
+    for(var idx=0; idx<SIZE; idx++){
+      var coords=getLine(idx);
+      var tiles=[];
+      for(var k=0;k<SIZE;k++){ var t=grid[coords[k].r][coords[k].c]; if(t) tiles.push(t); }
+      // merge
+      var result=[];
+      var lineMerges=[]; // {survivor, ghost}
+      for(var k=0;k<tiles.length;k++){
+        if(k<tiles.length-1 && tiles[k].val===tiles[k+1].val){
+          var survivor=tiles[k], ghost=tiles[k+1];
+          survivor.val=survivor.val*2; survivor.merged=true;
+          gained+=survivor.val;
+          if(survivor.val===2048 && !won){ won=true; }
+          result.push(survivor);
+          lineMerges.push({survivor:survivor, ghost:ghost});
+          k++;
+        } else {
+          result.push(tiles[k]);
+        }
+      }
+      // write back
+      for(var k=0;k<SIZE;k++){
+        var pos=coords[k];
+        var t = k<result.length ? result[k] : null;
+        if(t){ if(t.r!==pos.r||t.c!==pos.c) moved=true; t.r=pos.r; t.c=pos.c; }
+        grid[pos.r][pos.c]=t;
+      }
+      // 合体で消えるタイルの“合体先”を確定（生存タイルの最終位置へ滑らせる）
+      for(var lm=0; lm<lineMerges.length; lm++){
+        var s=lineMerges[lm].survivor;
+        mergedAway.push({tile:lineMerges[lm].ghost, r:s.r, c:s.c});
+      }
+    }
+
+    if(!moved && gained===0){ return; } // 盤面が変わらない手は無効（手数にも数えない）
+
+    history = prev;
+    undoBtn.disabled = false;
+    moves++;
+    score += gained;
+
+    // 効率ボーナス：この手で初めて2048に到達した瞬間に加点＋記録更新
+    if(won && !wasWon){
+      finishTime = Date.now();
+      lastWinMoves = moves;
+      lastWinTime = (finishTime - startTime)/1000;
+      lastBonus = SCORING.moveBonus(moves);
+      score += lastBonus;
+      if(!bestMoves || moves < bestMoves){
+        bestMoves = moves;
+        store.set('tide2048_bestmoves', ''+bestMoves);
+      }
+    }
+
+    updateScore(gained);
+    updateStats();
+
+    // 合体タイルを合体先へスライドさせてから消す
+    var m = cellMetrics();
+    for(var gi=0; gi<mergedAway.length; gi++){
+      var ga=mergedAway[gi], gel=els[ga.tile.id];
+      if(gel){ gel.style.zIndex='1'; setPos(gel, ga.r, ga.c, m); ghostIds[ga.tile.id]=1; }
+    }
+
+    addRandom();
+    render();
+
+    if(mergedAway.length){
+      var rm=[];
+      for(var gi2=0; gi2<mergedAway.length; gi2++) rm.push(mergedAway[gi2].tile.id);
+      setTimeout(function(){
+        for(var i=0;i<rm.length;i++){
+          var id=rm[i], e=els[id];
+          if(e && e.parentNode) e.parentNode.removeChild(e);
+          delete els[id]; delete ghostIds[id];
+        }
+      },150);
+    }
+
+    if(won && !keepGoing){ showOverlay(true); }
+    else if(isGameOver()){ showOverlay(false); }
+  }
+
+  function updateScore(gained){
+    scoreEl.textContent = score;
+    if(score>best){ best=score; bestEl.textContent=best; store.set('tide2048_best',''+best); }
+    if(gained>0){
+      var d=document.createElement('span'); d.className='delta'; d.textContent='+'+gained;
+      scoreEl.parentElement.appendChild(d);
+      setTimeout(function(){ d.remove(); },650);
+    }
+  }
+
+  function updateStats(){
+    movesEl.textContent = moves;
+    bestMovesEl.textContent = bestMoves ? (bestMoves + '手') : '—';
+  }
+
+  function isGameOver(){
+    if(cells().length) return false;
+    for(var r=0;r<SIZE;r++)for(var c=0;c<SIZE;c++){
+      var v=grid[r][c].val;
+      if(c<SIZE-1 && grid[r][c+1].val===v) return false;
+      if(r<SIZE-1 && grid[r+1][c].val===v) return false;
+    }
+    return true;
+  }
+
+  function showOverlay(isWin){
+    overlay.className='overlay '+(isWin?'win':'');
+    overlay.style.display='flex';
+    ovTitle.textContent = isWin?'2048 達成！':'ゲームオーバー';
+    ovKeep.style.display = isWin?'block':'none';
+    if(isWin){
+      var rec = (lastWinMoves && bestMoves && lastWinMoves===bestMoves)
+        ? '<br><span class="rec">🏆 最少手数こうしん！</span>' : '';
+      ovSub.innerHTML = lastWinMoves + '手でクリア！効率ボーナス +' + lastBonus + rec;
+    } else {
+      ovSub.innerHTML = moves + '手でストップ。スコア ' + score;
+    }
+  }
+
+  function undo(){
+    if(!history) return;
+    grid=emptyGrid();
+    for(var r=0;r<SIZE;r++)for(var c=0;c<SIZE;c++){
+      var t=history.grid[r][c];
+      if(t) grid[r][c]={id:t.id,val:t.val,r:r,c:c};
+    }
+    score=history.score; moves=history.moves; won=history.won; keepGoing=history.keepGoing;
+    history=null; undoBtn.disabled=true;
+    overlay.style.display='none';
+    render(true);
+    scoreEl.textContent=score;
+    updateStats();
+  }
+
+  // ---- input: keyboard ----
+  window.addEventListener('keydown',function(e){
+    var map={ArrowUp:0,ArrowRight:1,ArrowDown:2,ArrowLeft:3,w:0,d:1,s:2,a:3,W:0,D:1,S:2,A:3};
+    if(e.key in map){ e.preventDefault(); move(map[e.key]); }
+  });
+
+  // ---- input: swipe ----
+  var sx=0,sy=0,tracking=false;
+  var area=document.querySelector('.boardWrap');
+  function start(x,y){ sx=x; sy=y; tracking=true; }
+  function end(x,y){
+    if(!tracking) return; tracking=false;
+    var dx=x-sx, dy=y-sy;
+    var ax=Math.abs(dx), ay=Math.abs(dy);
+    if(Math.max(ax,ay)<24) return;
+    if(ax>ay){ move(dx>0?1:3); } else { move(dy>0?2:0); }
+  }
+  area.addEventListener('touchstart',function(e){ var t=e.touches[0]; start(t.clientX,t.clientY); },{passive:true});
+  area.addEventListener('touchend',function(e){ var t=e.changedTouches[0]; end(t.clientX,t.clientY); },{passive:true});
+  // also allow swipe anywhere on body (easier on mobile)
+  document.body.addEventListener('touchstart',function(e){ if(tracking) return; var t=e.touches[0]; start(t.clientX,t.clientY); },{passive:true});
+  document.body.addEventListener('touchend',function(e){ var t=e.changedTouches[0]; end(t.clientX,t.clientY); },{passive:true});
+  // mouse drag (desktop)
+  area.addEventListener('mousedown',function(e){ start(e.clientX,e.clientY); });
+  window.addEventListener('mouseup',function(e){ end(e.clientX,e.clientY); });
+
+  // buttons
+  undoBtn.addEventListener('click',undo);
+  newBtn.addEventListener('click',init);
+  ovNew.addEventListener('click',init);
+  ovKeep.addEventListener('click',function(){ keepGoing=true; overlay.style.display='none'; });
+
+  // ---- tutorial ----
+  var tut=document.getElementById('tut');
+  var tutTitle=document.getElementById('tutTitle');
+  var tutBody=document.getElementById('tutBody');
+  var tutDots=document.getElementById('tutDots');
+  var tutNext=document.getElementById('tutNext');
+  var tutSkip=document.getElementById('tutSkip');
+  var tvs=[document.querySelector('.tv1'),document.querySelector('.tv2'),document.querySelector('.tv3')];
+  var steps=[
+    {t:'スワイプで動かす',b:'上下左右にスワイプすると、タイルが全部その向きへ一気に寄るで。PCなら矢印キーでもOK。'},
+    {t:'同じ数字は合体',b:'同じ数字どうしがぶつかると合体して2倍に。2＋2＝4、4＋4＝8…とどんどん育てていく。'},
+    {t:'2048を作れ',b:'合体を重ねて 2048 のタイルを作ったら勝ち！達成後も続けられる。「↶ ひとつ戻す」で一手やり直しもOK。'}
+  ];
+  var tStep=0;
+  function showTut(){ tStep=0; renderTut(); tut.classList.add('show'); }
+  function hideTut(){ tut.classList.remove('show'); store.set('tide2048_seen','1'); }
+  function renderTut(){
+    var s=steps[tStep];
+    tutTitle.textContent=s.t; tutBody.textContent=s.b;
+    for(var i=0;i<tvs.length;i++){ tvs[i].classList.toggle('on',i===tStep); }
+    tutDots.innerHTML='';
+    for(var j=0;j<steps.length;j++){ var d=document.createElement('i'); if(j===tStep)d.className='on'; tutDots.appendChild(d); }
+    tutNext.textContent = tStep===steps.length-1 ? 'はじめる！' : 'つぎへ';
+  }
+  tutNext.addEventListener('click',function(){
+    if(tStep<steps.length-1){ tStep++; renderTut(); } else { hideTut(); }
+  });
+  tutSkip.addEventListener('click',hideTut);
+  document.getElementById('help').addEventListener('click',showTut);
+
+  window.addEventListener('resize',function(){ render(true); });
+
+  init();
+  if(!store.get('tide2048_seen')){ showTut(); }
+})();
+</script>
+</body>
+</html>
